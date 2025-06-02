@@ -1,0 +1,34 @@
+spring:
+  config:
+    import: optional:classpath:application-secret.yml
+  profiles:
+    include: secret
+  mail:
+    host: smtp.mail.ru
+    port: 465
+    protocol: smtps
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+            protocols: TLSv1.2
+            trust: "smtp.mail.ru"
+          starttls:
+            enable: false
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+server:
+  port: 8080
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha
+    tryItOutEnabled: true
+    filter: true
