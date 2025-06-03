@@ -59,15 +59,16 @@ public class SubscriptionController {
         }
         // Save subscription
         Subscription created = subscriptionService.createSubscription(subscription);
-        // If reminder is present, create it
-        if (request.getReminder() != null) {
-            SubscriptionWithReminderRequest.ReminderDto r = request.getReminder();
-            Reminder reminder = new Reminder();
-            reminder.setSubscription(created);
-            reminder.setDaysBefore(r.getDaysBefore());
-            reminder.setTimeOfDay(LocalTime.parse(r.getTimeOfDay()));
-            reminder.setIsEnabled(r.getIsEnabled() != null ? r.getIsEnabled() : true);
-            reminderService.createReminder(reminder);
+        // If reminders are present, create them all
+        if (request.getReminders() != null && !request.getReminders().isEmpty()) {
+            for (SubscriptionWithReminderRequest.ReminderDto r : request.getReminders()) {
+                Reminder reminder = new Reminder();
+                reminder.setSubscription(created);
+                reminder.setDaysBefore(r.getDaysBefore());
+                reminder.setTimeOfDay(LocalTime.parse(r.getTimeOfDay()));
+                reminder.setIsEnabled(r.getIsEnabled() != null ? r.getIsEnabled() : true);
+                reminderService.createReminder(reminder);
+            }
         }
         return ResponseEntity.ok(created);
     }

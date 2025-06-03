@@ -25,6 +25,11 @@ public class TelegramLinkServiceImpl implements TelegramLinkService {
 
     @Override
     public TelegramLink createTelegramLink(TelegramLink telegramLink) {
+        User user = telegramLink.getUser();
+        if (user != null) {
+            user.setIsTelegramLinked(true);
+            userRepository.save(user);
+        }
         return telegramLinkRepository.save(telegramLink);
     }
 
@@ -45,6 +50,10 @@ public class TelegramLinkServiceImpl implements TelegramLinkService {
     @Override
     public void deleteTelegramLink(Long userId) {
         telegramLinkRepository.deleteById(userId);
+        userRepository.findById(userId).ifPresent(user -> {
+            user.setIsTelegramLinked(false);
+            userRepository.save(user);
+        });
     }
 
     @Transactional
@@ -57,5 +66,8 @@ public class TelegramLinkServiceImpl implements TelegramLinkService {
             .linkedAt(LocalDateTime.now())
             .build();
         telegramLinkRepository.save(link);
+        // Set isTelegramLinked to true for the user
+        user.setIsTelegramLinked(true);
+        userRepository.save(user);
     }
 }

@@ -3,11 +3,12 @@ package com.example.subscriptionapp.service.impl;
 import com.example.subscriptionapp.dto.DashboardDTO;
 import com.example.subscriptionapp.dto.MonthlySpendingDTO;
 import com.example.subscriptionapp.dto.CategoryBreakdownDTO;
+import com.example.subscriptionapp.dto.AnalyticsBarChartItemDTO;
 import com.example.subscriptionapp.model.Subscription;
 import com.example.subscriptionapp.model.HistoryLog;
 import com.example.subscriptionapp.model.Reminder;
 import com.example.subscriptionapp.model.BillingPeriodUnit;
-import com.example.subscriptionapp.service.DashboardService;
+import com.example.subscriptionapp.service.AnalyticsService;
 import com.example.subscriptionapp.service.HistoryLogService;
 import com.example.subscriptionapp.service.ReminderService;
 import com.example.subscriptionapp.service.SubscriptionService;
@@ -19,7 +20,6 @@ import org.springframework.web.client.RestTemplate;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -28,7 +28,7 @@ import java.util.HashMap;
 import java.util.ArrayList;
 
 @Service
-public class DashboardServiceImpl implements DashboardService {
+public class AnalyticsServiceImpl implements AnalyticsService {
 
     private final SubscriptionService subscriptionService;
     private final HistoryLogService historyLogService;
@@ -40,9 +40,9 @@ public class DashboardServiceImpl implements DashboardService {
     @Autowired
     private SubscriptionRepository subscriptionRepository;
 
-    public DashboardServiceImpl(SubscriptionService subscriptionService,
-                              HistoryLogService historyLogService,
-                              ReminderService reminderService) {
+    public AnalyticsServiceImpl(SubscriptionService subscriptionService,
+                                HistoryLogService historyLogService,
+                                ReminderService reminderService) {
         this.subscriptionService = subscriptionService;
         this.historyLogService = historyLogService;
         this.reminderService = reminderService;
@@ -89,6 +89,37 @@ public class DashboardServiceImpl implements DashboardService {
         }
     }
 
+    private int countRenewalsInMonth(Subscription sub, int year, int month) {
+        LocalDate first = sub.getFirstPaymentDate();
+        if (first == null) return 0;
+        int periodValue = sub.getBillingPeriodValue();
+        BillingPeriodUnit periodUnit = sub.getBillingPeriodUnit();
+        LocalDate monthStart = LocalDate.of(year, month, 1);
+        LocalDate monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth());
+        if (first.isAfter(monthEnd)) return 0;
+        int renewals = 0;
+        LocalDate next = first;
+        while (!next.isAfter(monthEnd)) {
+            if (!next.isBefore(monthStart)) {
+                renewals++;
+            }
+            switch (periodUnit) {
+                case DAY:
+                    next = next.plusDays(periodValue);
+                    break;
+                case MONTH:
+                    next = next.plusMonths(periodValue);
+                    break;
+                case YEAR:
+                    next = next.plusYears(periodValue);
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unsupported billing period unit: " + periodUnit);
+            }
+        }
+        return renewals;
+    }
+
     @Override
     public DashboardDTO getDashboardData(Long userId) {
         DashboardDTO dto = new DashboardDTO();
@@ -103,32 +134,11 @@ public class DashboardServiceImpl implements DashboardService {
         LocalDate now = LocalDate.now();
         int currentYear = now.getYear();
         int currentMonth = now.getMonthValue();
-        int daysInMonth = now.lengthOfMonth();
 
         BigDecimal totalSpending = BigDecimal.ZERO;
         Map<String, BigDecimal> spendingByCategory = new HashMap<>();
         for (Subscription sub : activeSubscriptions) {
-            int renewals = 0;
-            LocalDate start = sub.getFirstPaymentDate();
-            if (start == null) continue;
-            if (sub.getBillingPeriodUnit() == BillingPeriodUnit.DAY) {
-                // Count how many times it will renew in this month
-                LocalDate from = start.isAfter(now.withDayOfMonth(1)) ? start : now.withDayOfMonth(1);
-                LocalDate to = now.withDayOfMonth(daysInMonth);
-                int activeDays = (int) (to.toEpochDay() - from.toEpochDay() + 1);
-                renewals = activeDays > 0 ? activeDays / sub.getBillingPeriodValue() : 0;
-            } else if (sub.getBillingPeriodUnit() == BillingPeriodUnit.MONTH) {
-                // If the renewal falls in this month
-                LocalDate next = sub.getNextPaymentDate();
-                if (next != null && next.getYear() == currentYear && next.getMonthValue() == currentMonth) {
-                    renewals = 1;
-                }
-            } else if (sub.getBillingPeriodUnit() == BillingPeriodUnit.YEAR) {
-                LocalDate next = sub.getNextPaymentDate();
-                if (next != null && next.getYear() == currentYear && next.getMonthValue() == currentMonth) {
-                    renewals = 1;
-                }
-            }
+            int renewals = countRenewalsInMonth(sub, currentYear, currentMonth);
             if (renewals > 0) {
                 BigDecimal amount = sub.getPrice().multiply(BigDecimal.valueOf(renewals));
                 BigDecimal amountInBase = convertToBaseCurrency(amount, sub.getCurrency(), exchangeRates);
@@ -197,28 +207,9 @@ public class DashboardServiceImpl implements DashboardService {
         LocalDate now = LocalDate.now();
         int currentYear = now.getYear();
         int currentMonth = now.getMonthValue();
-        int daysInMonth = now.lengthOfMonth();
         Map<String, BigDecimal> spendingByCategory = new HashMap<>();
         for (Subscription sub : subscriptions) {
-            int renewals = 0;
-            LocalDate start = sub.getFirstPaymentDate();
-            if (start == null) continue;
-            if (sub.getBillingPeriodUnit() == BillingPeriodUnit.DAY) {
-                LocalDate from = start.isAfter(now.withDayOfMonth(1)) ? start : now.withDayOfMonth(1);
-                LocalDate to = now.withDayOfMonth(daysInMonth);
-                int activeDays = (int) (to.toEpochDay() - from.toEpochDay() + 1);
-                renewals = activeDays > 0 ? activeDays / sub.getBillingPeriodValue() : 0;
-            } else if (sub.getBillingPeriodUnit() == BillingPeriodUnit.MONTH) {
-                LocalDate next = sub.getNextPaymentDate();
-                if (next != null && next.getYear() == currentYear && next.getMonthValue() == currentMonth) {
-                    renewals = 1;
-                }
-            } else if (sub.getBillingPeriodUnit() == BillingPeriodUnit.YEAR) {
-                LocalDate next = sub.getNextPaymentDate();
-                if (next != null && next.getYear() == currentYear && next.getMonthValue() == currentMonth) {
-                    renewals = 1;
-                }
-            }
+            int renewals = countRenewalsInMonth(sub, currentYear, currentMonth);
             if (renewals > 0) {
                 BigDecimal amount = sub.getPrice().multiply(BigDecimal.valueOf(renewals));
                 BigDecimal amountInBase = convertToBaseCurrency(amount, sub.getCurrency(), exchangeRates);
@@ -231,5 +222,88 @@ public class DashboardServiceImpl implements DashboardService {
             result.add(new CategoryBreakdownDTO(entry.getKey(), entry.getValue().doubleValue()));
         }
         return result;
+    }
+
+    @Override
+    public List<AnalyticsBarChartItemDTO> getMostExpensiveSubscriptions(Long userId) {
+        List<Subscription> subscriptions = subscriptionService.getAllActiveUserSubscriptions(userId);
+        Map<String, Double> exchangeRates = getExchangeRates(BASE_CURRENCY);
+        List<AnalyticsBarChartItemDTO> result = subscriptions.stream()
+            .map(sub -> {
+                double monthly = normalizeToMonthlyCost(sub).doubleValue();
+                double value = convertToBaseCurrency(BigDecimal.valueOf(monthly), sub.getCurrency(), exchangeRates).doubleValue();
+                String formatted = value >= 1000 ? String.format("%.0f тыс.", value / 1000) : String.format("%.0f", value);
+                return new AnalyticsBarChartItemDTO(sub.getTitle(), value, formatted);
+            })
+            .sorted((a, b) -> Double.compare(b.getValue(), a.getValue()))
+            .limit(5)
+            .collect(Collectors.toList());
+        return result;
+    }
+
+    @Override
+    public List<AnalyticsBarChartItemDTO> getLongestSubscriptions(Long userId) {
+        List<Subscription> subscriptions = subscriptionService.getAllActiveUserSubscriptions(userId);
+        List<AnalyticsBarChartItemDTO> result = subscriptions.stream()
+            .map(sub -> {
+                long days = java.time.temporal.ChronoUnit.DAYS.between(sub.getFirstPaymentDate(), LocalDate.now());
+                String formatted = String.valueOf(days);
+                return new AnalyticsBarChartItemDTO(sub.getTitle(), days, formatted);
+            })
+            .sorted((a, b) -> Long.compare((long)b.getValue(), (long)a.getValue()))
+            .limit(5)
+            .collect(Collectors.toList());
+        return result;
+    }
+
+    @Override
+    public List<AnalyticsBarChartItemDTO> getMostFundsSpent(Long userId) {
+        List<Subscription> subscriptions = subscriptionService.getAllActiveUserSubscriptions(userId);
+        Map<String, Double> exchangeRates = getExchangeRates(BASE_CURRENCY);
+        List<AnalyticsBarChartItemDTO> result = subscriptions.stream()
+            .map(sub -> {
+                double monthly = normalizeToMonthlyCost(sub).doubleValue();
+                double value = convertToBaseCurrency(BigDecimal.valueOf(monthly), sub.getCurrency(), exchangeRates).doubleValue();
+                long months = java.time.temporal.ChronoUnit.MONTHS.between(sub.getFirstPaymentDate(), LocalDate.now()) + 1;
+                double total = value * months;
+                String formatted = total >= 1000 ? String.format("%.0f тыс.", total / 1000) : String.format("%.0f", total);
+                return new AnalyticsBarChartItemDTO(sub.getTitle(), total, formatted);
+            })
+            .sorted((a, b) -> Double.compare(b.getValue(), a.getValue()))
+            .limit(5)
+            .collect(Collectors.toList());
+        return result;
+    }
+
+    @Override
+    public double getYearlySpending(Long userId) {
+        List<Subscription> subscriptions = subscriptionService.getAllActiveUserSubscriptions(userId);
+        Map<String, Double> exchangeRates = getExchangeRates(BASE_CURRENCY);
+        double total = 0.0;
+        for (Subscription sub : subscriptions) {
+            BigDecimal yearlyCost = BigDecimal.ZERO;
+            BigDecimal price = sub.getPrice();
+            int periodValue = sub.getBillingPeriodValue();
+            BillingPeriodUnit periodUnit = sub.getBillingPeriodUnit();
+            switch (periodUnit) {
+                case DAY:
+                    // Daily: price * 365 / periodValue
+                    yearlyCost = price.multiply(BigDecimal.valueOf(365)).divide(BigDecimal.valueOf(periodValue), 2, RoundingMode.HALF_UP);
+                    break;
+                case MONTH:
+                    // Monthly: price * 12 / periodValue
+                    yearlyCost = price.multiply(BigDecimal.valueOf(12)).divide(BigDecimal.valueOf(periodValue), 2, RoundingMode.HALF_UP);
+                    break;
+                case YEAR:
+                    // Yearly: price / periodValue
+                    yearlyCost = price.divide(BigDecimal.valueOf(periodValue), 2, RoundingMode.HALF_UP);
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unsupported billing period unit: " + periodUnit);
+            }
+            BigDecimal yearlyCostInBase = convertToBaseCurrency(yearlyCost, sub.getCurrency(), exchangeRates);
+            total += yearlyCostInBase.doubleValue();
+        }
+        return total;
     }
 }

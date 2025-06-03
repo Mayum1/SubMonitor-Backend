@@ -2,6 +2,7 @@ package com.example.subscriptionapp.controller;
 
 import com.example.subscriptionapp.model.User;
 import com.example.subscriptionapp.service.UserService;
+import com.example.subscriptionapp.dto.SettingsDTO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
@@ -47,6 +48,18 @@ public class UserController {
     public ResponseEntity<User> updateUser(@PathVariable Long id, @RequestBody User user) {
         User updatedUser = userService.updateUser(id, user);
         return ResponseEntity.ok(updatedUser);
+    }
+
+    @Operation(summary = "Обновить настройки пользователя")
+    @PutMapping("/{id}/settings")
+    public ResponseEntity<User> updateUserSettings(@PathVariable Long id, @RequestBody SettingsDTO settings) {
+        User user = userService.getUserById(id)
+                .orElseThrow(() -> new RuntimeException("User not found with id " + id));
+        if (settings.getDefaultCurrency() != null) user.setDefaultCurrency(settings.getDefaultCurrency());
+        if (settings.getDefaultTimezone() != null) user.setDefaultTimezone(settings.getDefaultTimezone());
+        // Add more fields as needed
+        User updated = userService.createUser(user); // or userService.updateUser(id, user) if you want to reuse logic
+        return ResponseEntity.ok(updated);
     }
 
     @Operation(summary = "Удалить пользователя")

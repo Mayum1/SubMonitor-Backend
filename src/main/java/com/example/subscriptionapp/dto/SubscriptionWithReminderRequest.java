@@ -5,6 +5,7 @@ import com.example.subscriptionapp.model.SubscriptionCategory;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 @Data
 public class SubscriptionWithReminderRequest {
@@ -18,7 +19,7 @@ public class SubscriptionWithReminderRequest {
     private Boolean autoRenew;
     private String logoOverrideUrl;
     private SubscriptionCategory subscriptionCategory;
-    private ReminderDto reminder;
+    private List<ReminderDto> reminders;
 
     @Data
     public static class ReminderDto {
